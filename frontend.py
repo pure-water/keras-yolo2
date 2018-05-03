@@ -1,3 +1,4 @@
+from __future__ import print_function
 from keras.models import Model
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
@@ -12,6 +13,9 @@ from keras.optimizers import SGD, Adam, RMSprop
 from preprocessing import BatchGenerator
 from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 from backend import TinyYoloFeature, FullYoloFeature, MobileNetFeature, SqueezeNetFeature, Inception3Feature, VGG16Feature, ResNet50Feature
+
+from datetime import date
+
 
 class YOLO(object):
     def __init__(self, backend,
@@ -60,6 +64,9 @@ class YOLO(object):
         features = self.feature_extractor.extract(input_image)            
 
         # make the object detection layer
+        print("detection layer nb_box",self.nb_box)
+        print("detection layer nb_class",self.nb_class)
+
         output = Conv2D(self.nb_box * (4 + 1 + self.nb_class), 
                         (1,1), strides=(1,1), 
                         padding='same', 
@@ -315,7 +322,7 @@ class YOLO(object):
                                      save_best_only=True, 
                                      mode='min', 
                                      period=1)
-        tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'), 
+        tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs_2018_04_30/'), 
                                   histogram_freq=0, 
                                   #write_batch_performance=True,
                                   write_graph=True, 
@@ -326,24 +333,28 @@ class YOLO(object):
         ############################################        
 
         self.model.fit_generator(generator        = train_generator, 
-                                 steps_per_epoch  = len(train_generator) * train_times, 
-                                 epochs           = warmup_epochs + nb_epochs, 
-                                 verbose          = 2 if debug else 1,
-                                 validation_data  = valid_generator,
-                                 validation_steps = len(valid_generator) * valid_times,
-                                 callbacks        = [early_stop, checkpoint, tensorboard], 
-                                 workers          = 3,
-                                 max_queue_size   = 8)      
-
+                                  steps_per_epoch  = len(train_generator) * train_times, 
+                                  epochs           = warmup_epochs + nb_epochs, 
+                                  verbose          = 2 if debug else 1,
+                                  validation_data  = valid_generator,
+                                  validation_steps = len(valid_generator) * valid_times,
+                                  callbacks        = [early_stop, checkpoint, tensorboard], 
+                                  workers          = 3,
+                                  max_queue_size   = 8)      
+ 
         ############################################
         # Compute mAP on the validation set
         ############################################
         average_precisions = self.evaluate(valid_generator)     
 
         # print evaluation
-        for label, average_precision in average_precisions.items():
-            print(self.labels[label], '{:.4f}'.format(average_precision))
-        print('mAP: {:.4f}'.format(sum(average_precisions.values()) / len(average_precisions)))         
+        evlog = "eval_" + str(date.now()) + ".log"
+
+        with open(evlog,'w') as ef: 
+
+             for label, average_precision in average_precisions.items():
+                  print(self.labels[label], '{:.4f}'.format(average_precision),file=ef)
+             print('mAP: {:.4f}'.format(sum(average_precisions.values()) / len(average_precisions)),file=ef)         
 
     def evaluate(self, 
                  generator, 
@@ -370,15 +381,17 @@ class YOLO(object):
 
         for i in range(generator.size()):
             raw_image = generator.load_image(i)
+            raw_height, raw_width, raw_channels = raw_image.shape
 
             # make the boxes and the labels
             pred_boxes  = self.predict(raw_image)
+
             
             score = np.array([box.score for box in pred_boxes])
             pred_labels = np.array([box.label for box in pred_boxes])        
             
             if len(pred_boxes) > 0:
-                pred_boxes = np.array([[box.xmin, box.ymin, box.xmax, box.ymax, box.score] for box in pred_boxes]) 
+                pred_boxes = np.array([[box.xmin*raw_width, box.ymin*raw_height, box.xmax*raw_width, box.ymax*raw_height, box.score] for box in pred_boxes])
             else:
                 pred_boxes = np.array([[]])  
             

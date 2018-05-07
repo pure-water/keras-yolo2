@@ -6,6 +6,8 @@ import numpy as np
 from preprocessing import parse_annotation
 from frontend import YOLO
 import json
+import tensorflow as tf
+import keras.backend as K
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
@@ -63,7 +65,10 @@ def _main_(args):
     #   Construct the model 
     ###############################
 
-    yolo = YOLO(backend             = config['model']['backend'],
+    run_meta = tf.RunMetadata()
+    with tf.Session(graph=tf.Graph()) as sess:
+      K.set_session(sess)
+      yolo = YOLO(backend             = config['model']['backend'],
                 input_size          = config['model']['input_size'], 
                 labels              = config['model']['labels'], 
                 max_box_per_image   = config['model']['max_box_per_image'],
@@ -73,7 +78,7 @@ def _main_(args):
     #   Load the pretrained weights (if any) 
     ###############################    
 
-    if os.path.exists(config['train']['pretrained_weights']):
+      if os.path.exists(config['train']['pretrained_weights']):
         print("Loading pre-trained weights in", config['train']['pretrained_weights'])
         yolo.load_weights(config['train']['pretrained_weights'])
 
@@ -81,7 +86,7 @@ def _main_(args):
     #   Start the training process 
     ###############################
 
-    yolo.train(train_imgs         = train_imgs,
+      yolo.train(train_imgs         = train_imgs,
                valid_imgs         = valid_imgs,
                train_times        = config['train']['train_times'],
                valid_times        = config['valid']['valid_times'],
@@ -95,6 +100,22 @@ def _main_(args):
                class_scale        = config['train']['class_scale'],
                saved_weights_name = config['train']['saved_weights_name'],
                debug              = config['train']['debug'])
+
+
+  
+
+
+
+      opts = tf.profiler.ProfileOptionBuilder.float_operation()
+      flops = tf.profiler.profile(sess.graph, run_meta=run_meta, cmd='scope', options=opts)
+
+      opts = tf.profiler.ProfileOptionBuilder.trainable_variables_parameter()
+      params = tf.profiler.profile(sess.graph, run_meta=run_meta, cmd='scope', options=opts)
+
+
+
+
+
 
 if __name__ == '__main__':
     args = argparser.parse_args()

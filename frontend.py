@@ -72,8 +72,15 @@ class YOLO(object):
                         padding='same', 
                         name='DetectionLayer', 
                         kernel_initializer='lecun_normal')(features)
+ 
+        print("output after conv2d sahpe") 
+        print(output)
+        print("grid_h",self.grid_w)
+        print("grid_w",self.grid_h)
+
         output = Reshape((self.grid_h, self.grid_w, self.nb_box, 4 + 1 + self.nb_class))(output)
         output = Lambda(lambda args: args[0])([output, self.true_boxes])
+       
 
         self.model = Model([input_image, self.true_boxes], output)
 
@@ -93,6 +100,7 @@ class YOLO(object):
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4]
         
+        print("grid_w",self.grid_w)
         cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
         cell_y = tf.transpose(cell_x, (0,2,1,3,4))
 
@@ -331,8 +339,14 @@ class YOLO(object):
         ############################################
         # Start the training process
         ############################################        
+    
+        run_meta = tf.RunMetadata()
 
-        self.model.fit_generator(generator        = train_generator, 
+        with tf.contrib.tfprof.ProfileContext('/home/ubuntu/keras_tf/tain_log') as pctx:
+
+          # High level API, such as slim, Estimator, etc.
+        
+             self.model.fit_generator(generator        = train_generator, 
                                   steps_per_epoch  = len(train_generator) * train_times, 
                                   epochs           = warmup_epochs + nb_epochs, 
                                   verbose          = 2 if debug else 1,
@@ -341,14 +355,24 @@ class YOLO(object):
                                   callbacks        = [early_stop, checkpoint, tensorboard], 
                                   workers          = 3,
                                   max_queue_size   = 8)      
- 
+
+             #Profiling ... 
+             opts = tf.profiler.ProfileOptionBuilder.float_operation()    
+             flops = tf.profiler.profile(run_meta=run_meta, cmd='scope', options=opts)
+
+             opts = tf.profiler.ProfileOptionBuilder.trainable_variables_parameter()    
+             params = tf.profiler.profile(run_meta=run_meta, cmd='scope', options=opts)
+
+        print("{:,} --- {:,}".format(flops.total_float_ops, params.total_parameters))
+
+
         ############################################
         # Compute mAP on the validation set
         ############################################
         average_precisions = self.evaluate(valid_generator)     
 
         # print evaluation
-        evlog = "eval_" + str(date.now()) + ".log"
+        evlog = "eval_" + ".log"
 
         with open(evlog,'w') as ef: 
 
